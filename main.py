@@ -1,12 +1,12 @@
 import logging
-import smtplib
 import sys
+import time
 
 import boto3
 import requests
-import time
 from bs4 import BeautifulSoup
 
+import email_module
 from peewee_orm import *
 
 
@@ -44,27 +44,12 @@ def process_url(file_url, bucket_name, s3_folder):
                             dmjl_storage_url=bucket_name + '/' + s3_folder + filename)
                 """Upload to S3"""
                 upload_s3_from_url(file_url=file_url, bucket_name=bucket_name, s3_folder=s3_folder)
-            else:
-                pass
         except Exception as e:
             transaction.rollback()
             logger.info('Failed to upload {}.\n{}'.format(filename, repr(e)))
             return {'failed_file': filename}
         else:
             return {'uploaded_file': filename}
-
-
-def send_email(sender, sender_pwd, recipients_string, subject, body):
-    email_text = 'From: {}\nTo: {}\nSubject: {}\n\n{}'.format(sender, recipients_string, subject, body)
-    recipients_list = recipients_string.split(', ')
-    try:
-        server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
-        server.ehlo()
-        server.login(sender, sender_pwd)
-        server.sendmail(sender, recipients_list, email_text)
-        server.close()
-    except Exception as e:
-        logger.info('Failed to send email.\n{}'.format(repr(e)))
 
 
 def run(**kwargs):
@@ -88,13 +73,19 @@ def run(**kwargs):
 
     if uploaded_files:
         subject = 'Notification: Files Upload'
-        body = 'The files listed below have been uploaded:\n\n' + '\n'.join(uploaded_files)
+        file_loader = email_module.FileSystemLoader('templates')
+        env = email_module.Environment(loader=file_loader)
+        template = env.get_template('email_body.html')
+        body = template.render(uploaded_files=uploaded_files)
         if not ENV.FM_DEBUG:
-            send_email(sender=kwargs.get('sender'),
-                       sender_pwd=kwargs.get('sender_pwd'),
-                       recipients_string=kwargs.get('recipient'),
-                       subject=subject,
-                       body=body)
+            try:
+                email_module.send_email(sender=kwargs.get('sender'),
+                                        sender_pwd=kwargs.get('sender_pwd'),
+                                        recipients_string=kwargs.get('recipients'),
+                                        subject=subject,
+                                        body=body)
+            except Exception as e:
+                logger.info('Failed to send email.\n{}'.format(repr(e)))
         logger.info(body)
     else:
         logger.info('No files to upload.')
@@ -140,7 +131,7 @@ if __name__ == '__main__':
     params['s3_folder'] = ENV.FM_S3_FOLDER
     params['sender'] = ENV.FM_EMAIL_SENDER
     params['sender_pwd'] = ENV.FM_EMAIL_SENDER_PWD
-    params['recipient'] = ENV.FM_EMAIL_RECIPIENT
+    params['recipients'] = ENV.FM_EMAIL_RECIPIENT
     logger.debug('Parameters are set. Starting while cycle.')
     logger.info('Run started.')
     while True:
@@ -154,7 +145,5 @@ if __name__ == '__main__':
                 logger.info('Run finished.')
                 print('Program exit')
                 exit(1)
-            else:
-                continue
         except Exception as e:
             logger.info(repr(e))

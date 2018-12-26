@@ -20,7 +20,7 @@ class BaseModel(Model):
 
 class File(BaseModel):
     dmjl_data_source = CharField()
-    dmjl_filename = CharField(unique=True)
+    dmjl_filename = CharField()
     dmjl_download_url = CharField()
     dmjl_storage_url = CharField()
 
